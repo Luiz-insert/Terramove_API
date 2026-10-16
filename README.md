@@ -10,8 +10,9 @@ automatizado com **GitHub Actions**, **Docker** e **Azure Container Apps** (ambi
 
 | Nome | RM |
 |---|---|
-| _Nome 1_ | _RM_ |
-| _Nome 2_ | _RM_ |
+| Ana Carolina Silva Santana | RM565232 |
+| Luiz Gusttavo Teixeira Braga | RM561220 |
+| Patrick Roth | RM565596 |
 
 ---
 
@@ -80,7 +81,7 @@ A collection do Postman está em [`ESG-MongoDB-Postman-Collection.json`](ESG-Mon
 ## Pipeline CI/CD
 
 **Ferramentas:** GitHub Actions (orquestração), GitHub Container Registry (imagens Docker),
-Azure Container Apps (hospedagem), Azure Cosmos DB for MongoDB (banco de staging e produção).
+Azure Container Apps (hospedagem), MongoDB Atlas (banco de staging e produção).
 
 Arquivo: [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)
 
@@ -121,13 +122,19 @@ O script [`infra/azure-setup.sh`](infra/azure-setup.sh) provisiona tudo de uma v
 [Azure Cloud Shell](https://shell.azure.com)):
 
 ```bash
-GITHUB_REPO=usuario/repositorio bash infra/azure-setup.sh
+export MONGODB_URI_STAGING="mongodb+srv://<usuario>:<senha>@<cluster>.mongodb.net/esg_staging?retryWrites=true&w=majority"
+export MONGODB_URI_PROD="mongodb+srv://<usuario>:<senha>@<cluster>.mongodb.net/esg_prod?retryWrites=true&w=majority"
+LOCATION=canadacentral GITHUB_REPO=usuario/repositorio bash infra/azure-setup.sh
 ```
 
-Ele cria o resource group, o Cosmos DB (API MongoDB, free tier, bancos `esg_staging` e `esg_prod`),
-o ambiente do Container Apps, os dois Container Apps e o service principal, e no final imprime os
-valores para cadastrar no GitHub. A connection string do banco fica guardada como **secret** do
-Container App, nunca no código.
+Ele cria o resource group, o ambiente do Container Apps, os dois Container Apps (staging e produção)
+e o service principal, e no final imprime os valores para cadastrar no GitHub. A connection string do
+banco fica guardada como **secret** do Container App, nunca no código.
+
+**Banco de dados:** um cluster gratuito (M0) do **MongoDB Atlas**, com um banco para cada ambiente
+(`esg_staging` e `esg_prod`). O acesso de rede do Atlas foi liberado para `0.0.0.0/0`, porque o
+Container Apps não tem IP de saída fixo; a proteção fica por conta de usuário e senha.
+Sem as variáveis `MONGODB_URI_*`, o script tenta criar um Azure Cosmos DB (API MongoDB) no lugar.
 
 > A imagem no GHCR precisa ser **pública** (GitHub → Packages → Package settings → Change visibility)
 > ou o script deve ser executado com `GHCR_TOKEN=<PAT com read:packages>`.
@@ -184,9 +191,9 @@ Orquestra dois serviços na rede bridge `terramove-network`:
 
 ## Prints do funcionamento
 
-> Substitua as imagens abaixo pelos prints reais (salvos em `docs/prints/`).
-
 ### Pipeline executando
+
+Execuções: <https://github.com/Luiz-insert/Terramove_API/actions>
 ![Pipeline completo](docs/prints/pipeline-visao-geral.png)
 ![Build e testes](docs/prints/pipeline-build-testes.png)
 ![Aprovação de produção](docs/prints/pipeline-aprovacao-producao.png)
@@ -195,13 +202,18 @@ Orquestra dois serviços na rede bridge `terramove-network`:
 ![docker compose up](docs/prints/docker-compose-up.png)
 
 ### Staging
-- URL: `https://<app-staging>.<regiao>.azurecontainerapps.io`
+- URL: <https://terramove-api-staging.thankfulglacier-03cbae21.canadacentral.azurecontainerapps.io/actuator/info>
+- API: <https://terramove-api-staging.thankfulglacier-03cbae21.canadacentral.azurecontainerapps.io/api/eventos-sismicos>
 
 ![Staging health](docs/prints/staging-health.png)
 ![Staging API](docs/prints/staging-api.png)
 
 ### Produção
-- URL: `https://<app-prod>.<regiao>.azurecontainerapps.io`
+- URL: <https://terramove-api-prod.thankfulglacier-03cbae21.canadacentral.azurecontainerapps.io/actuator/info>
+- API: <https://terramove-api-prod.thankfulglacier-03cbae21.canadacentral.azurecontainerapps.io/api/eventos-sismicos>
+
+> Os ambientes desligam quando ficam sem uso (escala a zero, para economizar créditos).
+> O primeiro acesso depois de um tempo parado pode levar cerca de 30 segundos.
 
 ![Produção health](docs/prints/producao-health.png)
 ![Produção API](docs/prints/producao-api.png)
@@ -214,13 +226,13 @@ Orquestra dois serviços na rede bridge `terramove-network`:
 |---|---|
 | Linguagem | Java 21 |
 | Framework | Spring Boot 3.3 (Web, Data MongoDB, Security, Validation, Actuator) |
-| Banco de dados | MongoDB 7 (local) / Azure Cosmos DB for MongoDB (staging e produção) |
+| Banco de dados | MongoDB 7 (local) / MongoDB Atlas (staging e produção) |
 | Build | Maven |
 | Testes | JUnit 5, MockMvc, Mockito, Spring Security Test |
 | Containerização | Docker (multi-stage), Docker Compose |
 | CI/CD | GitHub Actions |
 | Registry | GitHub Container Registry (GHCR) |
-| Cloud | Microsoft Azure — Container Apps, Cosmos DB, Azure CLI |
+| Cloud | Microsoft Azure (Container Apps, Azure CLI) + MongoDB Atlas |
 | Outros | Lombok, Postman |
 
 ### Estrutura do projeto
@@ -251,6 +263,6 @@ api-esg/
 | Dockerfile funcional | ☑ |
 | docker-compose.yml ou arquivos Kubernetes | ☑ |
 | Pipeline com etapas de build, teste e deploy | ☑ |
-| README.md com instruções e prints | ☐ |
+| README.md com instruções e prints | ☑ |
 | Documentação técnica com evidências (PDF ou PPT) | ☐ |
-| Deploy realizado nos ambientes staging e produção | ☐ |
+| Deploy realizado nos ambientes staging e produção | ☑ |
