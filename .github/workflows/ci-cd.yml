@@ -1,0 +1,210 @@
+name: CI/CD - TerraMove ESG API
+
+# Pull requests: só build + testes.
+# Push na main: build + testes -> imagem Docker -> deploy staging -> deploy produção (com aprovação).
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  JAVA_VERSION: '21'
+  REGISTRY: ghcr.io
+
+jobs:
+  # =================================================================
+  # 1) BUILD + TESTES
+  # =================================================================
+  build-test:
+    name: Build e testes
+    runs-on: ubuntu-latest
+
+    # MongoDB real para o teste de integração
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Compilar, testar e empacotar
+        run: mvn -B clean verify
+        env:
+          MONGODB_URI: mongodb://localhost:27017/esg_test
+
+      - name: Publicar relatório de testes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-testes
+          path: target/surefire-reports/
+
+      - name: Publicar JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-esg-jar
+          path: target/*.jar
+
+  # =================================================================
+  # 2) IMAGEM DOCKER -> GitHub Container Registry
+  # =================================================================
+  docker:
+    name: Build e push da imagem Docker
+    needs: build-test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.vars.outputs.image }}
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Definir nome da imagem
+        id: vars
+        run: |
+          # o registry exige nome em minúsculas
+          IMAGE_NAME=$(echo "${{ env.REGISTRY }}/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE_NAME:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Login no GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build e push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.vars.outputs.name }}:${{ github.sha }}
+            ${{ steps.vars.outputs.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # =================================================================
+  # 3) DEPLOY STAGING (automático)
+  # =================================================================
+  deploy-staging:
+    name: Deploy - Staging
+    needs: docker
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.url }}
+
+    steps:
+      - name: Login no Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Atualizar Container App de staging
+        id: deploy
+        run: |
+          az containerapp update \
+            --name "${{ vars.AZURE_CONTAINERAPP_STAGING }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "${{ needs.docker.outputs.image }}" \
+            --set-env-vars APP_VERSION=${{ github.sha }} \
+            --output none
+
+          FQDN=$(az containerapp show \
+            --name "${{ vars.AZURE_CONTAINERAPP_STAGING }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "url=https://$FQDN" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test (health check)
+        run: |
+          URL="${{ steps.deploy.outputs.url }}"
+          # o app pode estar escalado a zero: tenta por até ~5 minutos
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' "$URL/actuator/health" || true)
+            echo "Tentativa $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              curl -s "$URL/actuator/info"; echo
+              curl -s -o /dev/null -w 'GET /api/eventos-sismicos -> HTTP %{http_code}\n' "$URL/api/eventos-sismicos"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Aplicação não respondeu em $URL" && exit 1
+
+  # =================================================================
+  # 4) DEPLOY PRODUÇÃO (após staging OK + aprovação manual)
+  # =================================================================
+  deploy-production:
+    name: Deploy - Produção
+    needs: [ docker, deploy-staging ]
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+
+    steps:
+      - name: Login no Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Atualizar Container App de produção
+        id: deploy
+        run: |
+          az containerapp update \
+            --name "${{ vars.AZURE_CONTAINERAPP_PROD }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --image "${{ needs.docker.outputs.image }}" \
+            --set-env-vars APP_VERSION=${{ github.sha }} \
+            --output none
+
+          FQDN=$(az containerapp show \
+            --name "${{ vars.AZURE_CONTAINERAPP_PROD }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "url=https://$FQDN" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test (health check)
+        run: |
+          URL="${{ steps.deploy.outputs.url }}"
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' "$URL/actuator/health" || true)
+            echo "Tentativa $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              curl -s "$URL/actuator/info"; echo
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Aplicação não respondeu em $URL" && exit 1

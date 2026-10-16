@@ -1,0 +1,131 @@
+{
+	"info": {
+		"_postman_id": "a1b2c3d4-e5f6-4a5b-bc6d-7e8f9a0b1c2d",
+		"name": "ESG - Terramove MongoDB API",
+		"description": "Collection para testes de CRUD da API ESG migrada para MongoDB.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Eventos Sísmicos",
+			"item": [
+				{
+					"name": "Listar Todos",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8080/api/eventos-sismicos",
+							"protocol": "http",
+							"host": ["localhost"],
+							"port": "8080",
+							"path": ["api", "eventos-sismicos"]
+						}
+					}
+				},
+				{
+					"name": "Criar Evento",
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{ "key": "password", "value": "admin123", "type": "string" },
+								{ "key": "username", "value": "admin", "type": "string" }
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"titulo\": \"Novo Tremor Detectado\",\n    \"magnitude\": 5.2,\n    \"localizacao\": \"Região Norte\",\n    \"dataOcorrencia\": \"2023-11-20T10:00:00\",\n    \"descricao\": \"Evento teste Postman\",\n    \"metadados\": {\n        \"sensorId\": \"S-999\",\n        \"tipo\": \"Tectônico\"\n    }\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": {
+							"raw": "http://localhost:8080/api/eventos-sismicos",
+							"protocol": "http",
+							"host": ["localhost"],
+							"port": "8080",
+							"path": ["api", "eventos-sismicos"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Alertas Ambientais",
+			"item": [
+				{
+					"name": "Listar Todos",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8080/api/alertas",
+							"protocol": "http",
+							"host": ["localhost"],
+							"port": "8080",
+							"path": ["api", "alertas"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Regiões Monitoradas",
+			"item": [
+				{
+					"name": "Listar Todas",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8080/api/regioes",
+							"protocol": "http",
+							"host": ["localhost"],
+							"port": "8080",
+							"path": ["api", "regioes"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Auditorias Compliance",
+			"item": [
+				{
+					"name": "Listar Todas",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8080/api/auditorias",
+							"protocol": "http",
+							"host": ["localhost"],
+							"port": "8080",
+							"path": ["api", "auditorias"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Usuários",
+			"item": [
+				{
+					"name": "Listar Usuários",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8080/api/usuarios",
+							"protocol": "http",
+							"host": ["localhost"],
+							"port": "8080",
+							"path": ["api", "usuarios"]
+						}
+					}
+				}
+			]
+		}
+	]
+}

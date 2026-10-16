@@ -1,0 +1,52 @@
+# Orquestração local: API + MongoDB
+# Variáveis vêm do arquivo .env (copie .env.example para .env)
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb_esg
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE}
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - terramove-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: terramove-api:local
+    container_name: terramove-api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      MONGODB_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongodb:27017/${MONGO_DATABASE}?authSource=admin
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT:-docker-local}
+      APP_SEED_ENABLED: ${APP_SEED_ENABLED:-true}
+      APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD}
+      APP_USER_PASSWORD: ${APP_USER_PASSWORD}
+    networks:
+      - terramove-network
+
+volumes:
+  mongo_data:
+
+networks:
+  terramove-network:
+    driver: bridge
